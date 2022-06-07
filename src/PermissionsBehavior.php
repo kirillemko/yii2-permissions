@@ -5,29 +5,53 @@ namespace kirillemko\Yii\Permissions;
 
 use \yii\base\Behavior;
 use yii\base\InvalidConfigException;
+use yii\web\ForbiddenHttpException;
 
 
 abstract class BasePermissionsBehavior extends Behavior
 {
-    protected $_permissionsCalculated = null;
-    protected $_businessRulesCalculated = null;
-    protected $_businessRulesErrors = [];
 
-
+    protected $_modelPermissions = [];
+    protected $_permissionsConfigCalculated = null;
+    protected $_businessRulesConfigCalculated = null;
 
     abstract protected function getPermissionsConfig(): array;
     abstract protected function getBusinessRulesConfig(): array;
 
 
-    protected $object;
 
 
-    /**
-     * @param $object
-     */
-    public function __construct()
+
+    public function getPermissionsData()
     {
-        $this->object = $this->owner;
+        foreach ($this->getPermissionsConfigCalculated() as $permissionName => $permissionRuleData) {
+            if( is_numeric($permissionName) ){
+                $permissionName = $permissionRuleData;
+                $permissionRuleData = null;
+            }
+            $this->getModelPermission($permissionName)->isPassed();
+        }
+
+        return $this->_modelPermissions;
+    }
+
+
+    public function permissionPassedOrFail($permissionName): void
+    {
+        $modelPermission = $this->getModelPermission($permissionName);
+
+        if( !$modelPermission->isCanPassed() ){
+            throw new ForbiddenHttpException(\Yii::t('yii', 'You are not allowed to perform this action.'));
+        }
+    }
+
+    public function permissionRulesPassedOrFail($permissionName): void
+    {
+        $modelPermission = $this->getModelPermission($permissionName);
+
+        if( !$modelPermission->isRulesPassed() ){
+            throw new ForbiddenHttpException(\Yii::t('yii', 'You are not allowed to perform this action.'));
+        }
     }
 
 
@@ -36,98 +60,34 @@ abstract class BasePermissionsBehavior extends Behavior
 
 
 
-    public function getPermissions(): array
+
+    private function getModelPermission($permissionName): ModelPermission
     {
-        if( $this->_permissionsCalculated === null ){
-            $rawPermissions = $this->getPermissionsConfig();
-            if( !$rawPermissions ){
-                $this->_permissionsCalculated = [];
-            }
-            foreach ($rawPermissions as $permissionName => $ruleData) {
-                if( is_numeric($permissionName) ){
-                    $permissionName = $ruleData;
-                    $ruleData = null;
-                }
-                $this->_permissionsCalculated[$permissionName] = \Yii::$app->user->can($permissionName, $ruleData);
-            }
+        if( !isset($this->_modelPermissions[$permissionName]) ){
+            $this->_modelPermissions[$permissionName] = new ModelPermission($this->owner, $permissionName);
+            $this->_modelPermissions[$permissionName]->setRoleParams( $this->getPermissionsConfigCalculated()[$permissionName] ?? [] );
+            $this->_modelPermissions[$permissionName]->setRules( $this->getBusinessRulesConfigCalculated()[$permissionName] ?? [] );
         }
 
-        return $this->_permissionsCalculated;
+        return $this->_modelPermissions[$permissionName];
     }
 
 
 
-    public function getBusinessRules($stopOnFirstError=false): array
+    private function getPermissionsConfigCalculated(): array
     {
-        if( $this->_businessRulesCalculated === null ){
-            $rawRules = $this->getBusinessRulesConfig();
-            if( !$rawRules ){
-                $this->_businessRulesCalculated = [];
-            }
-            foreach ($rawRules as $permissionName => $permissionRules) {
-                $this->_businessRulesErrors[$permissionName] = [];
-                foreach ($permissionRules as $checkMethodName => $errorText) {
-                    if( is_numeric($checkMethodName) ){
-                        $checkMethodName = $errorText;
-                        $errorText = null;
-                    }
-                    if( !method_exists($this->owner, $checkMethodName) ){
-                        throw new InvalidConfigException('Method ' . $checkMethodName . ' is not found in class');
-                    }
-                    if( !$this->owner->{$checkMethodName}() ){
-                        $this->_businessRulesCalculated[$permissionName] = false;
-                        if( $errorText ) {
-                            $this->_businessRulesErrors[$permissionName][] = $errorText;
-                        }
-                        if( $stopOnFirstError ){
-                            break;
-                        }
-
-                    }
-                }
-            }
+        if( $this->_permissionsConfigCalculated === null ){
+            $this->_permissionsConfigCalculated = $this->getPermissionsConfig();
         }
-        return $this->_businessRulesCalculated;
+        return $this->_permissionsConfigCalculated;
     }
-
-
-    public function getBusinessRulesErrors(): array
+    private function getBusinessRulesConfigCalculated(): array
     {
-        if( $this->_businessRulesCalculated === null ){
-            $this->getBusinessRules();
+        if( $this->_businessRulesConfigCalculated === null ){
+            $this->_businessRulesConfigCalculated = $this->getBusinessRulesConfig();
         }
-        return $this->_businessRulesErrors;
+        return $this->_businessRulesConfigCalculated;
     }
-
-
-    public function getFullPermissionData(): array
-    {
-        $data = [];
-        foreach ($this->getPermissions() as $permissionName => $permissionAllow) {
-            $data[$permissionName] = [
-                'allow' => $permissionAllow,
-                'business' => false,
-                'errors' => [],
-            ];
-        }
-        foreach ($this->getBusinessRules() as $permissionName => $ruleAllow) {
-            if( !isset($data[$permissionName]) ){
-                $data[$permissionName] = [
-                    'allow' => false,
-                    'business' => false,
-                    'errors' => [],
-                ];
-            }
-            $data[$permissionName]['business'] = $ruleAllow;
-        }
-        foreach ($this->getBusinessRulesErrors() as $permissionName => $errors) {
-            $data[$permissionName]['errors'] = $errors;
-        }
-
-        return $data;
-    }
-
-
 
 
 }
