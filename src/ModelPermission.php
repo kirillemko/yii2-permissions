@@ -81,6 +81,7 @@ class ModelPermission
     
     private function checkRules()
     {
+        $this->rulesPass = true;
         foreach ($this->rules as $checkMethodName => $errorText) {
             if( is_numeric($checkMethodName) ){
                 $checkMethodName = $errorText;
