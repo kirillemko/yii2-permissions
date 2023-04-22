@@ -35,6 +35,13 @@ abstract class BasePermissionsBehavior extends Behavior
         return $this->_modelPermissions;
     }
 
+    public function checkUserCan($permissionName): bool
+    {
+        $this->permissionPassedOrFail($permissionName);
+        $this->permissionRulesPassedOrFail($permissionName);
+        return true;
+    }
+
 
     public function permissionPassedOrFail($permissionName): void
     {
