@@ -20,7 +20,7 @@ class ModelPermission
     public $rulesPass = null;
     public $errors = [];
 
-    
+
     public function __construct($model, $permissionName)
     {
         $this->model = $model;
@@ -28,13 +28,13 @@ class ModelPermission
     }
 
 
-    
-    
+
+
     public function isPassed()
     {
         return $this->isCanPassed() && $this->isRulesPassed();
-    }    
-    
+    }
+
     public function isCanPassed()
     {
         if( $this->can === null ){
@@ -51,9 +51,9 @@ class ModelPermission
         return $this->rulesPass;
     }
 
-    
-    
-    
+
+
+
 
     /**
      * @param array|callable $roleParams
@@ -63,14 +63,14 @@ class ModelPermission
     {
         $this->roleParams = $roleParams;
     }
-    
+
     public function setRules(array $rules): void
     {
         $this->rules = $rules;
     }
-    
-    
-    
+
+
+
     private function checkCan()
     {
         if( is_callable($this->roleParams) ){
@@ -78,21 +78,41 @@ class ModelPermission
         }
         $this->can = \Yii::$app->user->can($this->permissionName, $this->roleParams);
     }
-    
+
     private function checkRules()
     {
         $this->rulesPass = true;
-        foreach ($this->rules as $checkMethodName => $errorText) {
-            if( is_numeric($checkMethodName) ){
-                $checkMethodName = $errorText;
-                $errorText = null;
+        foreach ($this->rules as $key => $value) {
+            $methodName = null;
+            $classConfig = null;
+            $errorText = null;
+            $result = false;
+
+            if( is_numeric($key) ){
+                if( is_array($value) ){
+                    $classConfig = $value;
+                } else {
+                    $methodName = $value;
+                }
+            } else {
+                $methodName = $key;
+                $errorText = $value;
             }
 
-            try {
-                $result = $this->model->$checkMethodName();
-            } catch (UnknownMethodException $e) {
-                throw new InvalidConfigException('Method ' . $checkMethodName . ' is not found in class');
+            if ($methodName) {
+                try {
+                    $result = $this->model->$methodName();
+                } catch (UnknownMethodException $e) {
+                    throw new InvalidConfigException('Method ' . $methodName . ' is not found in class');
+                }
             }
+
+            if( $classConfig ){
+                $result = (\Yii::createObject($classConfig))->execute($this->model);
+                $errorText = $classConfig['errorText'] ?? null;
+            }
+
+
 
             if( !$result ){
                 $this->rulesPass = false;
@@ -102,7 +122,7 @@ class ModelPermission
             }
         }
     }
-    
+
 
 
 }
